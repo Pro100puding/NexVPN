@@ -1,4 +1,4 @@
-# Релиз NexVPN: сборка -> подпись -> публикация GitHub Release с APK.
+﻿# Релиз NexVPN: сборка -> подпись -> публикация GitHub Release с APK.
 # Запуск: release.cmd (или powershell -File release.ps1)
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
@@ -70,10 +70,13 @@ if (-not $token -or $token -like "*ВСТАВЬ*") {
 }
 
 # git: код должен быть закоммичен и запушен (тег создаётся из дефолтной ветки)
+$oldEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 $dirty = git -C $root status --porcelain 2>$null
-if ($dirty) { Write-Host "ВНИМАНИЕ: есть незакоммиченные изменения — релиз уедет без них!" -ForegroundColor Yellow }
-$pushed = git -C $root log origin/HEAD..HEAD --oneline 2>$null
-if ($pushed) { Write-Host "ВНИМАНИЕ: коммиты не запушены — обновление увидят не все!" -ForegroundColor Yellow }
+$pushed = git -C $root log "@{u}..HEAD" --oneline 2>$null
+$ErrorActionPreference = $oldEAP
+if ($dirty) { Write-Host "ВНИМАНИЕ: есть незакоммиченные изменения - релиз уедет без них!" -ForegroundColor Yellow }
+if ($pushed) { Write-Host "ВНИМАНИЕ: коммиты не запушены - обновление увидят не все!" -ForegroundColor Yellow }
 
 # --- 5. Публикация GitHub Release ---
 $h = @{
