@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="nex_black">#FF0A0614</color>
+    <color name="nex_surface">#FF151024</color>
+    <color name="nex_purple">#FF7C3AED</color>
+    <color name="nex_purple_light">#FFA78BFA</color>
+    <color name="nex_purple_dark">#FF4C1D95</color>
+    <color name="nex_white">#FFF5F3FF</color>
+    <color name="nex_green">#FF34D399</color>
+    <color name="nex_red">#FFF87171</color>
+    <color name="nex_gray">#FF9CA3AF</color>
+</resources>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NexVPN</string>
+    <string name="btn_connect">Подключить</string>
+    <string name="btn_disconnect">Отключить</string>
+    <string name="switch_bypass">Обход белых списков</string>
+    <string name="status_idle">Не подключено</string>
+    <string name="status_connecting">Подключение…</string>
+    <string name="status_connected">Подключено</string>
+    <string name="status_error">Ошибка</string>
+    <string name="label_country">Страна</string>
+    <string name="label_protocol">Протокол</string>
+    <string name="label_ping">Ping</string>
+    <string name="switch_best_ping">Выбирать лучшие по пингу</string>
+    <string name="label_keys_active">Активных ключей</string>
+    <string name="label_doh">DNS over HTTPS</string>
+    <string name="label_http_block">Блок HTTP (режем нешифрованное)</string>
+    <string name="notif_channel">Туннель VPN</string>
+</resources>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.NexVPN" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/nex_purple</item>
+        <item name="colorOnPrimary">@color/nex_white</item>
+        <item name="colorSecondary">@color/nex_purple_light</item>
+        <item name="android:colorBackground">@color/nex_black</item>
+        <item name="colorSurface">@color/nex_surface</item>
+        <item name="android:statusBarColor">@color/nex_black</item>
+        <item name="android:navigationBarColor">@color/nex_black</item>
+    </style>
+</resources>

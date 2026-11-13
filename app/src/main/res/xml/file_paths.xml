@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Каталог, куда UpdateChecker скачивает APK для установки -->
+    <cache-path name="updates" path="updates/" />
+</paths>

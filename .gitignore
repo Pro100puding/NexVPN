@@ -1,0 +1,33 @@
+# Сборка
+.gradle/
+build/
+app/build/
+.kotlin/
+local.properties
+
+# APK/бандлы (в репо не кладём — они в GitHub Releases)
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Логи и времёнка
+*.log
+build_log*.txt
+build_err.txt
+logcat*.txt
+dl_log.txt
+wrapper_log.txt
+*.bak
+libs_tmp/
+
+# Секреты — НИКОГДА не публиковать
+keystore/
+keystore.properties
+*.jks
+*.keystore
+github-token.txt
+.env
