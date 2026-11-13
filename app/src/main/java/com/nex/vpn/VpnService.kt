@@ -89,15 +89,17 @@ class NexVpnService : VpnService(), CoreCallbackHandler {
         val bypass = intent?.getBooleanExtra("bypass", false) ?: false
         // Ключи тянем ПЕРЕД выбором: на старте кэш пустой, иначе «нет живых ключей»
         // вызывается из фонового Thread → runBlocking допустим (main-поток не блокируем)
-        val key = kotlinx.coroutines.runBlocking { KeyRepository.pickKeyLive(bypass) }
-        if (key == null) {
+        val keys = kotlinx.coroutines.runBlocking { KeyRepository.pickKeysLive(bypass, count = 6) }
+        if (keys.isEmpty()) {
             currentStatus = "нет живых ключей"
             broadcast("error")
             stopSelf()
             return
         }
+        val key = keys.first()
         currentKey = key
         currentStatus = key.name?.takeIf { it.isNotEmpty() } ?: key.host
+        android.util.Log.i("NexVPN", "pool: ${keys.size} ключей, первый=${key.name ?: key.host}")
         broadcast("starting")
 
         // Foreground-уведомление уже поднято в onStartCommand
@@ -130,7 +132,7 @@ class NexVpnService : VpnService(), CoreCallbackHandler {
 
         // ---- контроллер и конфиг ----
         controller = Libv2ray.newCoreController(this)
-        val config = XrayConfigBuilder.build(key, bypass, allowLan = false)
+        val config = XrayConfigBuilder.build(keys, bypass, allowLan = false)
         android.util.Log.i("NexVPN", "xray config: $config")
         try {
             controller!!.startLoop(config, tun!!.fd)

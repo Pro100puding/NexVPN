@@ -14,8 +14,18 @@ package com.nex.vpn
  */
 object XrayConfigBuilder {
 
-    fun build(key: VlessKey, bypass: Boolean, allowLan: Boolean = false): String {
-        val sb = StringBuilder(2048)
+    fun build(key: VlessKey, bypass: Boolean, allowLan: Boolean = false): String =
+        build(listOf(key), bypass, allowLan)
+
+    /**
+     * Несколько ключей: по одному vless-outbound на ключ + observatory (сам пробит
+     * каждый сервер) и routing-балансер leastping, который держит живой.
+     * Если выбранный ключ умрёт/забанит — xray переключится сам, без перезапуска.
+     * (urltest-outbound в этой сборке xray отсутствует, поэтому observatory+balancer)
+     */
+    fun build(keys: List<VlessKey>, bypass: Boolean, allowLan: Boolean = false): String {
+        require(keys.isNotEmpty()) { "keys must not be empty" }
+        val sb = StringBuilder(4096)
         sb.append('{')
         // ---- log ----
         sb.append("\"log\":{\"loglevel\":\"warning\"},")
@@ -31,9 +41,25 @@ object XrayConfigBuilder {
         sb.append("\"queryStrategy\":\"UseIPv4\"")
         sb.append("},")
 
+        // ---- observatory: health-check каждого vless-outbound ----
+        sb.append("\"observatory\":{\"enableConcurrency\":true,\"subjects\":[")
+        keys.indices.forEachIndexed { i, _ ->
+            if (i > 0) sb.append(',')
+            sb.append("{\"tag\":\"proxy$i\",\"url\":\"https://www.gstatic.com/generate_204\",\"interval\":\"10s\",\"enableConcurrency\":true}")
+        }
+        sb.append("]},")
+
         // ---- routing ----
         sb.append("\"routing\":{")
         sb.append("\"domainStrategy\":\"IPIfNonMatch\",")
+        sb.append("\"balancers\":[{")
+        // NOTE: в Xray поле селектора балансера — "selector" (не "outbounds")
+        sb.append("\"tag\":\"balancer\",\"strategy\":{\"type\":\"leastping\"},\"selector\":[")
+        keys.indices.forEachIndexed { i, _ ->
+            if (i > 0) sb.append(',')
+            sb.append("\"proxy$i\"")
+        }
+        sb.append("]}],")
         sb.append("\"rules\":[")
         // 1. рез HTTP: порт 80 -> block. Это ключевая защита от утечек открытым текстом
         sb.append("{\"type\":\"field\",\"port\":\"80\",\"network\":\"tcp,udp\",\"outboundTag\":\"blocked\"},")
@@ -49,8 +75,8 @@ object XrayConfigBuilder {
         if (bypass) {
             sb.append("{\"type\":\"field\",\"domain\":[\"geosite:category-gov-ru\",\"geosite:category-bank\"],\"outboundTag\":\"direct\"},")
         }
-        // 6. всё остальное -> прокси (vless-ключ)
-        sb.append("{\"type\":\"field\",\"network\":\"tcp,udp\",\"outboundTag\":\"proxy\"}")
+        // 6. всё остальное -> балансер поверх vless-ключей
+        sb.append("{\"type\":\"field\",\"network\":\"tcp,udp\",\"balancerTag\":\"balancer\"}")
         sb.append("]},")
 
         // ---- inbound: TUN от VpnService (xray читает fd из env xray.tun.fd) ----
@@ -65,8 +91,9 @@ object XrayConfigBuilder {
 
         // ---- outbounds ----
         sb.append("\"outbounds\":[")
-        // proxy: vless/reality
-        sb.append(buildProxyOutbound(key)).append(',')
+        keys.forEachIndexed { i, k ->
+            sb.append(buildProxyOutbound(k, "proxy$i")).append(',')
+        }
         // direct
         sb.append("{\"protocol\":\"freedom\",\"tag\":\"direct\",\"settings\":{\"domainStrategy\":\"UseIP\"}},")
         // block
@@ -89,14 +116,14 @@ object XrayConfigBuilder {
         }
     }
 
-    private fun buildProxyOutbound(k: VlessKey): String {
+    private fun buildProxyOutbound(k: VlessKey, tag: String): String {
         val sb = StringBuilder(2048)
         val security = if (k.protocol == "reality") "reality" else "tls"
         // REALITY поддерживает только raw/xhttp/grpc — ws под неё недопустим
         val transport = if (security == "reality" && k.transport == "ws") "tcp" else k.transport
 
         sb.append("{")
-        sb.append("\"protocol\":\"vless\",\"tag\":\"proxy\",")
+        sb.append("\"protocol\":\"vless\",\"tag\":\"").append(jsonEscape(tag)).append("\",")
         sb.append("\"settings\":{\"vnext\":[{")
         sb.append("\"address\":\"").append(k.host).append("\",")
         sb.append("\"port\":").append(k.port).append(',')

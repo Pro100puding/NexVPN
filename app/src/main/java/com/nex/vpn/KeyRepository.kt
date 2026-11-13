@@ -85,22 +85,38 @@ object KeyRepository {
      * TCP-коннектом — нода может слушать порт, но резать соединение (429, битый SNI).
      */
     suspend fun pickKeyLive(bypass: Boolean, maxTry: Int = 8, budgetMs: Long = 20_000L): VlessKey? =
-        withContext(Dispatchers.IO) {
-            try {
-                kotlinx.coroutines.withTimeoutOrNull(budgetMs) { pickKeyLiveInner(bypass, maxTry) }
-            } catch (e: Exception) {
-                null
-            }
-        }
+        pickKeysLive(bypass, count = 1, maxTry = maxTry, budgetMs = budgetMs).firstOrNull()
 
-    private suspend fun pickKeyLiveInner(bypass: Boolean, maxTry: Int): VlessKey? =
+    /**
+     * Пул живых ключей (для urltest-автовыбора в xray).
+     * Отбирает до [count] ключей, реально отвечающих на уровне транспорта.
+     * Если probe не подтвердил ни одного — возвращает первые [count] из перемешанного
+     * пула: urltest сам проверит их при работе и отсеет мёртвые.
+     */
+    suspend fun pickKeysLive(
+        bypass: Boolean,
+        count: Int = 6,
+        maxTry: Int = 16,
+        budgetMs: Long = 25_000L,
+    ): List<VlessKey> = withContext(Dispatchers.IO) {
+        val result = try {
+            kotlinx.coroutines.withTimeoutOrNull(budgetMs) {
+                pickKeysLiveInner(bypass, count, maxTry)
+            }
+        } catch (e: Exception) {
+            null
+        }
+        result ?: emptyList()
+    }
+
+    private suspend fun pickKeysLiveInner(bypass: Boolean, count: Int, maxTry: Int): List<VlessKey> =
         withContext(Dispatchers.IO) {
             val keys = try {
                 fetchKeys()
             } catch (e: Exception) {
                 emptyList()
             }
-            if (keys.isEmpty()) return@withContext null
+            if (keys.isEmpty()) return@withContext emptyList()
 
             val pool = if (bypass) {
                 val reality = keys.filter { it.protocol == "reality" }
@@ -110,23 +126,20 @@ object KeyRepository {
             }
 
             if (bestByPing) {
-                // режим «лучшие по пингу»: меряем всех кандидатов, берём быстрейший
-                var bestKey: VlessKey? = null
-                var bestMs = Long.MAX_VALUE
-                for (k in pool.take(maxTry)) {
-                    val ms = measureKey(k, 1200)
-                    if (ms in 0 until bestMs) {
-                        bestMs = ms
-                        bestKey = k
-                    }
-                }
-                bestKey ?: pool.firstOrNull()
+                // режим «лучшие по пингу»: меряем кандидатов, берём быстрейшие
+                val measured = pool.take(maxTry)
+                    .map { k -> measureKey(k, 1200) to k }
+                    .filter { (ms, _) -> ms >= 0 }
+                    .sortedBy { (ms, _) -> ms }
+                measured.map { (_, k) -> k }.take(count).ifEmpty { pool.take(count) }
             } else {
-                for (k in pool.take(maxTry)) {
-                    if (measureKey(k, 1200) >= 0) return@withContext k
+                val alive = mutableListOf<VlessKey>()
+                for (k in pool) {
+                    if (alive.size >= count) break
+                    if (measureKey(k, 1200) >= 0) alive += k
                 }
-                // ни одна не прошла probe — отдаём хоть что-то, xray попробует сам
-                pool.firstOrNull()
+                // мёртвые probe'ом не подтвердились — отдаём хоть что-то, urltest проверит сам
+                if (alive.isEmpty()) pool.take(count) else alive
             }
         }
 
@@ -143,8 +156,12 @@ object KeyRepository {
             k.transport == "xhttp" -> probeXhttp(k, timeoutMs)
             else -> probeTls(k, timeoutMs)
         }
-        if (alive) (System.nanoTime() - t0) / 1_000_000 else -1L
-    } catch (_: Exception) {
+        val ms = if (alive) (System.nanoTime() - t0) / 1_000_000 else -1L
+        android.util.Log.i("NexVPN", "probe ${k.name ?: k.host}:${k.port} " +
+            "${k.protocol}/${k.transport} -> ${if (alive) "${ms}ms" else "DEAD"}")
+        ms
+    } catch (e: Exception) {
+        android.util.Log.i("NexVPN", "probe ${k.name ?: k.host}:${k.port} -> DEAD (${e.javaClass.simpleName})")
         -1L
     }
 
@@ -215,7 +232,12 @@ object KeyRepository {
         }
     }
 
-    /** tls+xhttp: TLS + обычный GET; жив, если сервер отвечает HTTP и не 429/403 */
+    /**
+     * tls+xhttp: TLS + обычный GET по пути ключа.
+     * Живой xhttp-фронт отвечает 200 (путь существует) или 400/405 (путь есть,
+     * но GET не поддерживается — норм для packet-up). 404 = путь не существует
+     * (фронтинг мёртв/истёк), 429/403 = бан, 5xx = сервер падает — всё это мёртво.
+     */
     private fun probeXhttp(k: VlessKey, timeoutMs: Int): Boolean {
         val sock = openTls(k, timeoutMs)
         try {
@@ -231,7 +253,7 @@ object KeyRepository {
             val line = BufferedReader(InputStreamReader(sock.inputStream, Charsets.US_ASCII))
                 .readLine() ?: return false
             val code = line.split(" ").getOrNull(1) ?: return false
-            return code != "429" && code != "403"
+            return code in setOf("200", "400", "405")
         } finally {
             try { sock.close() } catch (_: Exception) {}
         }
